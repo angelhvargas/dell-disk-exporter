@@ -5,6 +5,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Metrics struct {
@@ -33,40 +34,73 @@ type Metrics struct {
 	ThermalManagement2Trans   float64 `json:"thm_temp2_trans_count"`
 	ThermalManagement1Time    float64 `json:"thm_temp1_total_time"`
 	ThermalManagement2Time    float64 `json:"thm_temp2_total_time"`
+	executor                  CommandExecutor
 }
 
-func NewMetrics() *Metrics {
-	return &Metrics{}
+// CommandExecutor defines an interface for executing commands
+type CommandExecutor interface {
+	ExecuteCommand(name string, args ...string) ([]byte, error)
+}
+
+// DefaultCommandExecutor implements CommandExecutor
+type DefaultCommandExecutor struct{}
+
+func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	return cmd.CombinedOutput()
+}
+
+func NewMetrics(executor CommandExecutor) *Metrics {
+	return &Metrics{executor: executor}
 }
 
 func (m *Metrics) GetSMARTLog(drive string) (map[string]interface{}, error) {
-	cmd := exec.Command("nvme", "smart-log", "/dev/"+drive, "--output-format", "json")
-	output, err := cmd.CombinedOutput()
+	output, err := m.executor.ExecuteCommand("nvme", "smart-log", "/dev/"+drive, "--output-format", "json")
 	if err != nil {
 		return nil, err
 	}
 
-	var logData map[string]interface{}
-	if err := json.Unmarshal(output, &logData); err != nil {
-		return nil, err
+	var smartLog map[string]interface{}
+	if err := json.Unmarshal(output, &smartLog); err != nil {
+		return parseNvmeSmartLogText(string(output))
 	}
-	return logData, nil
+
+	return smartLog, nil
+}
+
+func parseNvmeSmartLogText(output string) (map[string]interface{}, error) {
+	smartLog := make(map[string]interface{})
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		if strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			smartLog[key] = value
+		}
+	}
+
+	return smartLog, nil
 }
 
 func (m *Metrics) UpdateMetrics() {
-	drives, err := getNVMeDrives()
-	if err != nil {
-		log.Printf("Error detecting NVMe drives: %v", err)
-		return
-	}
-	for _, drive := range drives {
-		logData, err := m.GetSMARTLog(drive)
+	for {
+		drives, err := getNVMeDrives()
 		if err != nil {
-			log.Printf("Error getting SMART log for %s: %v", drive, err)
-			continue
+			log.Printf("Error detecting NVMe drives: %v", err)
+			return
 		}
-		log.Printf("SMART Log for %s: %v", drive, logData)
-		// Update Prometheus metrics here
+		for _, drive := range drives {
+			logData, err := m.GetSMARTLog(drive)
+			if err != nil {
+				log.Printf("Error getting SMART log for %s: %v", drive, err)
+				continue
+			}
+			log.Printf("SMART Log for %s: %v", drive, logData)
+			// Update Prometheus metrics here
+		}
+		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}
 }
 

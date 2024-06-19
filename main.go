@@ -17,14 +17,14 @@ func main() {
 		log.Fatal(http.ListenAndServe(":9077", nil))
 	}()
 
-	// Initialize the IDRAC client
-	idracClient := idrac.NewClient()
+	// Initialize the IDRAC client with the default executor
+	idracClient := idrac.NewClient(&idrac.DefaultCommandExecutor{})
 	// Start the update loop
-	idracClient.UpdateMetrics()
+	go idracClient.UpdateMetrics()
 
-	// Initialize the SMART metrics updater
-	smartMetrics := smart.NewMetrics()
-	smartMetrics.UpdateMetrics()
+	// Initialize the SMART metrics updater with the default executor
+	smartMetrics := smart.NewMetrics(&smart.DefaultCommandExecutor{})
+	go smartMetrics.UpdateMetrics()
 
 	select {} // Block forever
 }

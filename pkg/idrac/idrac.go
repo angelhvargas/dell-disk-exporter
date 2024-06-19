@@ -4,42 +4,66 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"time"
 )
 
-type Client struct{}
-
-func NewClient() *Client {
-	return &Client{}
+// CommandExecutor defines an interface for executing commands
+type CommandExecutor interface {
+	ExecuteCommand(name string, args ...string) ([]byte, error)
 }
 
-func (c *Client) GetRAIDStatus() (map[string]string, error) {
-	cmd := exec.Command("racadm", "raid", "get", "vdisks", "-o", "-p", "layout,status,RemainingRedundancy,Size")
-	output, err := cmd.CombinedOutput()
+// DefaultCommandExecutor implements CommandExecutor
+type DefaultCommandExecutor struct{}
+
+func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	return cmd.CombinedOutput()
+}
+
+type Client struct {
+	executor CommandExecutor
+}
+
+func NewClient(executor CommandExecutor) *Client {
+	return &Client{executor: executor}
+}
+
+func (c *Client) GetRAIDStatus() (map[string]map[string]string, error) {
+	output, err := c.executor.ExecuteCommand("racadm", "raid", "get", "vdisks", "-o", "-p", "layout,status,RemainingRedundancy,Size")
 	if err != nil {
 		return nil, err
 	}
 
-	result := make(map[string]string)
 	lines := strings.Split(string(output), "\n")
+	raidStatuses := make(map[string]map[string]string)
+	var currentVdisk string
+
 	for _, line := range lines {
-		if strings.Contains(line, "=") {
+		if strings.HasPrefix(line, "Disk.Virtual") {
+			currentVdisk = strings.TrimSpace(strings.Split(line, ":")[1])
+			raidStatuses[currentVdisk] = make(map[string]string)
+		} else if currentVdisk != "" && strings.Contains(line, "=") {
 			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				result[key] = value
-			}
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			raidStatuses[currentVdisk][key] = value
 		}
 	}
-	return result, nil
+
+	return raidStatuses, nil
 }
 
 func (c *Client) UpdateMetrics() {
-	// Implement the logic to update metrics
-	status, err := c.GetRAIDStatus()
-	if err != nil {
-		log.Printf("Error fetching RAID status: %v", err)
-		return
+	for {
+		statuses, err := c.GetRAIDStatus()
+		if err != nil {
+			log.Printf("Error fetching RAID status: %v", err)
+			return
+		}
+		for vdisk, metrics := range statuses {
+			log.Printf("RAID Status for %s: %v", vdisk, metrics)
+			// Update Prometheus metrics here
+		}
+		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}
-	log.Printf("RAID Status: %v", status)
 }
