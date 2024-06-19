@@ -14,7 +14,7 @@ func main() {
 	// Start the Prometheus metrics server
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(":8000", nil))
+		log.Fatal(http.ListenAndServe(":9077", nil))
 	}()
 
 	// Initialize the IDRAC client
