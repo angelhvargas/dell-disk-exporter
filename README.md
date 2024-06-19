@@ -48,7 +48,7 @@ Example Prometheus configuration:
 scrape_configs:
   - job_name: 'dell_disk_health'
     static_configs:
-      - targets: ['localhost:8000']
+      - targets: ['<TARGET_IP>:9077']
 ```
 
 ## Metrics
