@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Initial release of Dell Disk Health Exporter
 - Metrics for RAID status, redundancy, size, and layout
 - Metrics for NVMe health, presence, and various SMART metrics
@@ -15,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions workflow for automated builds and releases
 
 ## [v0.0.1] - 2024-06-19
+
 ### Added
+
 - Initial release of Dell Disk Health Exporter
 - Metrics for RAID status, redundancy, size, and layout
 - Metrics for NVMe health, presence, and various SMART metrics
