@@ -39,9 +39,9 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
           mkdir -p ./build
           if [ "${{ matrix.arch }}" == "arm64" ]; then
-            CC=aarch64-linux-gnu-gcc go build -o ./build/dell-disk-exporter-${{ matrix.arch }}
+            CC=aarch64-linux-gnu-gcc make build
           else
-            go build -o ./build/dell-disk-exporter-${{ matrix.arch }}
+            make build
           fi
         env:
           GOARCH: ${{ matrix.arch }}
@@ -50,11 +50,34 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dell-disk-exporter-${{ matrix.arch }}
-          path: ./build/dell-disk-exporter-${{ matrix.arch }}
+          path: ./build/$(BINARY_NAME)
           if-no-files-found: error
 
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run tests and collect coverage
+        run: |
+          make test
+          make coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/coverage.html
+
   release:
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
 
     steps:
@@ -64,6 +87,12 @@ jobs:
           path: ./release
           pattern: dell-disk-exporter-*
           merge-multiple: true
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: ./coverage
 
       - run: ls -R ./release
 
