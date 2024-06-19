@@ -16,14 +16,18 @@ COVERAGE_DIR=coverage
 COVERAGE_FILE=$(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML=$(COVERAGE_DIR)/coverage.html
 
+# Default architecture
+ARCH ?= amd64
+
 .PHONY: all build test coverage fmt vet clean
 
 all: build
 
-build: 
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) -v
+build:
+	mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-$(ARCH) -v
 
-test: 
+test:
 	$(GOTEST) -v ./...
 
 coverage:
@@ -38,6 +42,6 @@ fmt:
 vet:
 	$(GOVET) ./...
 
-clean: 
+clean:
 	$(GOCMD) clean
 	rm -rf $(BUILD_DIR) $(COVERAGE_DIR)
