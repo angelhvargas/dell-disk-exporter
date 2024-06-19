@@ -1,4 +1,4 @@
-module github.com/angelhvargas/dell-disk-health-exporter
+module github.com/angelhvargas/dell-disk-exporter
 
 go 1.21.4
 
