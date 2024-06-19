@@ -6,36 +6,9 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-)
 
-type Metrics struct {
-	CriticalWarning           int     `json:"critical_warning"`
-	Temperature               float64 `json:"temperature"`
-	AvailableSpare            float64 `json:"avail_spare"`
-	SpareThreshold            float64 `json:"spare_thresh"`
-	PercentageUsed            float64 `json:"percent_used"`
-	DataUnitsRead             float64 `json:"data_units_read"`
-	DataUnitsWritten          float64 `json:"data_units_written"`
-	HostReadCommands          float64 `json:"host_read_commands"`
-	HostWriteCommands         float64 `json:"host_write_commands"`
-	ControllerBusyTime        float64 `json:"controller_busy_time"`
-	PowerCycles               float64 `json:"power_cycles"`
-	PowerOnHours              float64 `json:"power_on_hours"`
-	UnsafeShutdowns           float64 `json:"unsafe_shutdowns"`
-	MediaErrors               float64 `json:"media_errors"`
-	NumErrorLogEntries        float64 `json:"num_err_log_entries"`
-	WarningTemperatureTime    float64 `json:"warning_temp_time"`
-	CriticalCompositeTempTime float64 `json:"critical_comp_time"`
-	TemperatureSensor1        float64 `json:"temperature_sensor_1"`
-	TemperatureSensor2        float64 `json:"temperature_sensor_2"`
-	TemperatureSensor3        float64 `json:"temperature_sensor_3"`
-	TemperatureSensor4        float64 `json:"temperature_sensor_4"`
-	ThermalManagement1Trans   float64 `json:"thm_temp1_trans_count"`
-	ThermalManagement2Trans   float64 `json:"thm_temp2_trans_count"`
-	ThermalManagement1Time    float64 `json:"thm_temp1_total_time"`
-	ThermalManagement2Time    float64 `json:"thm_temp2_total_time"`
-	executor                  CommandExecutor
-}
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // CommandExecutor defines an interface for executing commands
 type CommandExecutor interface {
@@ -50,8 +23,24 @@ func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]
 	return cmd.CombinedOutput()
 }
 
+type Metrics struct {
+	executor        CommandExecutor
+	smartLogMetrics *prometheus.GaugeVec
+}
+
 func NewMetrics(executor CommandExecutor) *Metrics {
-	return &Metrics{executor: executor}
+	smartLogMetrics := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "nvme_smart_log",
+			Help: "SMART log metrics for NVMe devices",
+		},
+		[]string{"device", "metric"},
+	)
+	prometheus.MustRegister(smartLogMetrics)
+	return &Metrics{
+		executor:        executor,
+		smartLogMetrics: smartLogMetrics,
+	}
 }
 
 func (m *Metrics) GetSMARTLog(drive string) (map[string]interface{}, error) {
@@ -98,7 +87,13 @@ func (m *Metrics) UpdateMetrics() {
 				continue
 			}
 			log.Printf("SMART Log for %s: %v", drive, logData)
-			// Update Prometheus metrics here
+			for key, value := range logData {
+				floatValue, ok := value.(float64)
+				if !ok {
+					continue
+				}
+				m.smartLogMetrics.WithLabelValues(drive, key).Set(floatValue)
+			}
 		}
 		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/angelhvargas/dell-disk-exporter/pkg/idrac"
 	"github.com/angelhvargas/dell-disk-exporter/pkg/smart"
-
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
