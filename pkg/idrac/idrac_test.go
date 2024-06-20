@@ -1,10 +1,15 @@
 package idrac
 
 import (
+	"errors"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// MockCommandExecutor implements CommandExecutor for testing
 type MockCommandExecutor struct {
 	MockOutput string
 	MockError  error
@@ -33,7 +38,8 @@ Disk.Virtual.0:RAID.Integrated.1-0
 `,
 	}
 
-	client := NewClient(mockExecutor)
+	registry := prometheus.NewRegistry()
+	client := NewClient(mockExecutor, registry)
 	status, err := client.GetRAIDStatus()
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -52,5 +58,94 @@ Disk.Virtual.0:RAID.Integrated.1-0
 	}
 	if status["RAID.Integrated.1-0"]["Size"] != "372.00 GB" {
 		t.Fatalf("Expected Size to be 372.00 GB, got %s", status["RAID.Integrated.1-0"]["Size"])
+	}
+}
+
+func TestGetRAIDStatusError(t *testing.T) {
+	mockExecutor := &MockCommandExecutor{
+		MockError: errors.New("command error"),
+	}
+
+	registry := prometheus.NewRegistry()
+	client := NewClient(mockExecutor, registry)
+	_, err := client.GetRAIDStatus()
+	if err == nil {
+		t.Fatalf("Expected error, got none")
+	}
+}
+
+func TestUpdateMetrics(t *testing.T) {
+	mockExecutor := &MockCommandExecutor{
+		MockOutput: `
+Disk.Virtual.1:RAID.Integrated.1-1
+   Layout                           = Raid-10
+   Status                           = Ok
+   RemainingRedundancy              = 1
+   Size                             = 1787.50 GB
+Disk.Virtual.0:RAID.Integrated.1-0
+   Layout                           = Raid-1
+   Status                           = Ok
+   RemainingRedundancy              = 1
+   Size                             = 372.00 GB
+`,
+	}
+
+	registry := prometheus.NewRegistry()
+	client := NewClient(mockExecutor, registry)
+
+	// Register metrics with the custom registry
+	registry.MustRegister(raidStatus)
+	registry.MustRegister(raidRedundancy)
+	registry.MustRegister(raidSize)
+	registry.MustRegister(raidLayout)
+
+	go client.UpdateMetrics()
+
+	// Allow some time for metrics to be updated
+	time.Sleep(1 * time.Second)
+
+	// Test RAID status metrics
+	expectedStatus := `
+# HELP raid_status Status of the RAID controller
+# TYPE raid_status gauge
+raid_status{vdisk="RAID.Integrated.1-1"} 1
+raid_status{vdisk="RAID.Integrated.1-0"} 1
+`
+	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedStatus), "raid_status"); err != nil {
+		t.Fatalf("unexpected collecting result:\n%s", err)
+	}
+
+	// Test RAID redundancy metrics
+	expectedRedundancy := `
+# HELP raid_redundancy Remaining redundancy of the RAID controller
+# TYPE raid_redundancy gauge
+raid_redundancy{vdisk="RAID.Integrated.1-1"} 1
+raid_redundancy{vdisk="RAID.Integrated.1-0"} 1
+`
+	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedRedundancy), "raid_redundancy"); err != nil {
+		t.Fatalf("unexpected collecting result:\n%s", err)
+	}
+
+	// Test RAID size metrics
+	expectedSize := `
+# HELP raid_size Size of the RAID controller
+# TYPE raid_size gauge
+raid_size{vdisk="RAID.Integrated.1-1"} 1787.5
+raid_size{vdisk="RAID.Integrated.1-0"} 372
+`
+
+	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedSize), "raid_size"); err != nil {
+		t.Fatalf("unexpected collecting result:\n%s", err)
+	}
+
+	// Test RAID layout metrics
+	expectedLayout := `
+# HELP raid_layout Layout of the RAID controller
+# TYPE raid_layout gauge
+raid_layout{vdisk="RAID.Integrated.1-1"} 1
+raid_layout{vdisk="RAID.Integrated.1-0"} 1
+`
+	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedLayout), "raid_layout"); err != nil {
+		t.Fatalf("unexpected collecting result:\n%s", err)
 	}
 }

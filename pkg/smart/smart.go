@@ -23,12 +23,18 @@ func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]
 	return cmd.CombinedOutput()
 }
 
+// Function signature for detecting NVMe drives
+type DetectDrivesFunc func() ([]string, error)
+
+var detectNVMeDrives DetectDrivesFunc = getNVMeDrives
+
 type Metrics struct {
 	executor        CommandExecutor
 	smartLogMetrics *prometheus.GaugeVec
+	registry        *prometheus.Registry
 }
 
-func NewMetrics(executor CommandExecutor) *Metrics {
+func NewMetrics(executor CommandExecutor, registry *prometheus.Registry) *Metrics {
 	smartLogMetrics := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "nvme_smart_log",
@@ -36,10 +42,11 @@ func NewMetrics(executor CommandExecutor) *Metrics {
 		},
 		[]string{"device", "metric"},
 	)
-	prometheus.MustRegister(smartLogMetrics)
+	registry.MustRegister(smartLogMetrics)
 	return &Metrics{
 		executor:        executor,
 		smartLogMetrics: smartLogMetrics,
+		registry:        registry,
 	}
 }
 
@@ -75,7 +82,7 @@ func parseNvmeSmartLogText(output string) (map[string]interface{}, error) {
 
 func (m *Metrics) UpdateMetrics() {
 	for {
-		drives, err := getNVMeDrives()
+		drives, err := detectNVMeDrives()
 		if err != nil {
 			log.Printf("Error detecting NVMe drives: %v", err)
 			return

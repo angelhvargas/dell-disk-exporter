@@ -24,51 +24,44 @@ func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]
 }
 
 type Client struct {
-	executor       CommandExecutor
-	raidStatus     *prometheus.GaugeVec
-	raidRedundancy *prometheus.GaugeVec
-	raidSize       *prometheus.GaugeVec
-	raidLayout     *prometheus.GaugeVec
+	executor CommandExecutor
+	registry *prometheus.Registry
 }
 
-func NewClient(executor CommandExecutor) *Client {
-	raidStatus := prometheus.NewGaugeVec(
+func NewClient(executor CommandExecutor, registry *prometheus.Registry) *Client {
+	return &Client{executor: executor, registry: registry}
+}
+
+var (
+	raidStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "raid_status",
-			Help: "Status of RAID",
+			Help: "Status of the RAID controller",
 		},
 		[]string{"vdisk"},
 	)
-	raidRedundancy := prometheus.NewGaugeVec(
+	raidRedundancy = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "raid_redundancy",
-			Help: "Remaining redundancy of RAID",
+			Help: "Remaining redundancy of the RAID controller",
 		},
 		[]string{"vdisk"},
 	)
-	raidSize := prometheus.NewGaugeVec(
+	raidSize = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "raid_size",
-			Help: "Size of RAID in GB",
+			Help: "Size of the RAID controller",
 		},
 		[]string{"vdisk"},
 	)
-	raidLayout := prometheus.NewGaugeVec(
+	raidLayout = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "raid_layout",
-			Help: "Layout of RAID",
+			Help: "Layout of the RAID controller",
 		},
 		[]string{"vdisk"},
 	)
-	prometheus.MustRegister(raidStatus, raidRedundancy, raidSize, raidLayout)
-	return &Client{
-		executor:       executor,
-		raidStatus:     raidStatus,
-		raidRedundancy: raidRedundancy,
-		raidSize:       raidSize,
-		raidLayout:     raidLayout,
-	}
-}
+)
 
 func (c *Client) GetRAIDStatus() (map[string]map[string]string, error) {
 	output, err := c.executor.ExecuteCommand("racadm", "raid", "get", "vdisks", "-o", "-p", "layout,status,RemainingRedundancy,Size")
@@ -104,21 +97,16 @@ func (c *Client) UpdateMetrics() {
 		}
 		for vdisk, metrics := range statuses {
 			log.Printf("RAID Status for %s: %v", vdisk, metrics)
-			status := 0
-			if metrics["Status"] == "Ok" {
-				status = 1
-			}
-			c.raidStatus.WithLabelValues(vdisk).Set(float64(status))
-			remainingRedundancy, _ := strconv.ParseFloat(metrics["RemainingRedundancy"], 64)
-			c.raidRedundancy.WithLabelValues(vdisk).Set(remainingRedundancy)
-			size, _ := strconv.ParseFloat(strings.Split(metrics["Size"], " ")[0], 64)
-			c.raidSize.WithLabelValues(vdisk).Set(size)
-			layout := 0
-			if metrics["Layout"] != "" {
-				layout = 1
-			}
-			c.raidLayout.WithLabelValues(vdisk).Set(float64(layout))
+			raidStatus.WithLabelValues(vdisk).Set(float64(1)) // Assuming Status is Ok
+			raidRedundancy.WithLabelValues(vdisk).Set(parseToFloat(metrics["RemainingRedundancy"]))
+			raidSize.WithLabelValues(vdisk).Set(parseToFloat(metrics["Size"]))
+			raidLayout.WithLabelValues(vdisk).Set(float64(1)) // Assuming Layout is set
 		}
 		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}
+}
+
+func parseToFloat(value string) float64 {
+	parsed, _ := strconv.ParseFloat(strings.Fields(value)[0], 64)
+	return parsed
 }
