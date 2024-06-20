@@ -1,6 +1,7 @@
 package idrac
 
 import (
+	"context"
 	"log"
 	"os/exec"
 	"strconv"
@@ -19,12 +20,15 @@ type CommandExecutor interface {
 type DefaultCommandExecutor struct{}
 
 func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
 	return cmd.CombinedOutput()
 }
 
 type Client struct {
 	executor       CommandExecutor
+	registry       *prometheus.Registry
 	raidStatus     *prometheus.GaugeVec
 	raidRedundancy *prometheus.GaugeVec
 	raidSize       *prometheus.GaugeVec
@@ -68,6 +72,7 @@ func NewClient(executor CommandExecutor, registry *prometheus.Registry) *Client 
 
 	return &Client{
 		executor:       executor,
+		registry:       registry,
 		raidStatus:     raidStatus,
 		raidRedundancy: raidRedundancy,
 		raidSize:       raidSize,
@@ -76,12 +81,15 @@ func NewClient(executor CommandExecutor, registry *prometheus.Registry) *Client 
 }
 
 func (c *Client) GetRAIDStatus() (map[string]map[string]string, error) {
+	log.Println("Executing racadm command to get RAID status...")
 	output, err := c.executor.ExecuteCommand("racadm", "raid", "get", "vdisks", "-o", "-p", "layout,status,RemainingRedundancy,Size")
 	if err != nil {
+		log.Printf("Error executing racadm command: %v", err)
 		return nil, err
 	}
 
 	lines := strings.Split(string(output), "\n")
+	log.Println("Parsing racadm command output...")
 	raidStatuses := make(map[string]map[string]string)
 	var currentVdisk string
 
@@ -97,6 +105,7 @@ func (c *Client) GetRAIDStatus() (map[string]map[string]string, error) {
 		}
 	}
 
+	log.Println("Finished parsing racadm command output.")
 	return raidStatuses, nil
 }
 
@@ -105,14 +114,14 @@ func (c *Client) UpdateMetrics() {
 		statuses, err := c.GetRAIDStatus()
 		if err != nil {
 			log.Printf("Error fetching RAID status: %v", err)
-			return
+			continue
 		}
 		for vdisk, metrics := range statuses {
 			log.Printf("RAID Status for %s: %v", vdisk, metrics)
-			c.raidStatus.WithLabelValues(vdisk).Set(1) // Assuming Status is Ok
+			c.raidStatus.WithLabelValues(vdisk).Set(float64(1)) // Assuming Status is Ok
 			c.raidRedundancy.WithLabelValues(vdisk).Set(parseToFloat(metrics["RemainingRedundancy"]))
 			c.raidSize.WithLabelValues(vdisk).Set(parseToFloat(metrics["Size"]))
-			c.raidLayout.WithLabelValues(vdisk).Set(1) // Assuming Layout is set
+			c.raidLayout.WithLabelValues(vdisk).Set(float64(1)) // Assuming Layout is set
 		}
 		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}
