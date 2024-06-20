@@ -123,9 +123,9 @@ func TestUpdateMetrics(t *testing.T) {
 	}
 
 	// Mock getNVMeDrives function by setting it to the mock function
-	originalGetNVMeDrives := getNVMeDrives
-	getNVMeDrives = mockGetNVMeDrives
-	defer func() { getNVMeDrives = originalGetNVMeDrives }()
+	originalGetNVMeDrives := GetNVMeDrives
+	GetNVMeDrives = mockGetNVMeDrives
+	defer func() { GetNVMeDrives = originalGetNVMeDrives }()
 
 	registry := prometheus.NewRegistry()
 	metrics := NewMetrics(mockExecutor, registry, 5*time.Minute)
@@ -170,7 +170,7 @@ nvme_smart_log{device="nvme0n1",metric="warning_temp_time"} 0
 	}
 
 	// Simulate the drive becoming absent
-	getNVMeDrives = mockGetNVMeDrivesAbsent
+	GetNVMeDrives = mockGetNVMeDrivesAbsent
 
 	go metrics.UpdateMetrics()
 

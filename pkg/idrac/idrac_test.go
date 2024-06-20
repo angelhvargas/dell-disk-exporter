@@ -93,12 +93,6 @@ Disk.Virtual.0:RAID.Integrated.1-0
 	registry := prometheus.NewRegistry()
 	client := NewClient(mockExecutor, registry)
 
-	// Register metrics with the custom registry
-	registry.MustRegister(raidStatus)
-	registry.MustRegister(raidRedundancy)
-	registry.MustRegister(raidSize)
-	registry.MustRegister(raidLayout)
-
 	go client.UpdateMetrics()
 
 	// Allow some time for metrics to be updated
@@ -133,7 +127,6 @@ raid_redundancy{vdisk="RAID.Integrated.1-0"} 1
 raid_size{vdisk="RAID.Integrated.1-1"} 1787.5
 raid_size{vdisk="RAID.Integrated.1-0"} 372
 `
-
 	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedSize), "raid_size"); err != nil {
 		t.Fatalf("unexpected collecting result:\n%s", err)
 	}

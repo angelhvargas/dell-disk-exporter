@@ -31,7 +31,8 @@ type Metrics struct {
 	absentDuration  time.Duration
 }
 
-var getNVMeDrives = func() ([]string, error) {
+// Exported for testing
+var GetNVMeDrives = func() ([]string, error) {
 	cmd := exec.Command("lsblk", "-d", "-n", "-o", "NAME,TYPE")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -109,7 +110,7 @@ func parseNvmeSmartLogText(output string) (map[string]interface{}, error) {
 
 func (m *Metrics) UpdateMetrics() {
 	for {
-		drives, err := getNVMeDrives()
+		drives, err := GetNVMeDrives()
 		if err != nil {
 			log.Printf("Error detecting NVMe drives: %v", err)
 			return
@@ -135,12 +136,14 @@ func (m *Metrics) UpdateMetrics() {
 			delete(m.absentDrives, drive)
 		}
 
-		for drive := range m.absentDrives {
-			if !currentDrives[drive] && time.Since(m.absentDrives[drive]) < m.absentDuration {
-				m.nvmePresence.WithLabelValues(drive).Set(0)
-			} else {
-				m.smartLogMetrics.DeleteLabelValues(drive)
-				m.nvmePresence.DeleteLabelValues(drive)
+		for drive, timestamp := range m.absentDrives {
+			if !currentDrives[drive] {
+				if time.Since(timestamp) > m.absentDuration {
+					m.nvmePresence.DeleteLabelValues(drive)
+					m.smartLogMetrics.DeleteLabelValues(drive)
+				} else {
+					m.nvmePresence.WithLabelValues(drive).Set(0)
+				}
 			}
 		}
 
