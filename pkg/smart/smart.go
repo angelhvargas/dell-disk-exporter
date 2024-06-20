@@ -23,15 +23,29 @@ func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]
 	return cmd.CombinedOutput()
 }
 
-// Function signature for detecting NVMe drives
-type DetectDrivesFunc func() ([]string, error)
-
-var detectNVMeDrives DetectDrivesFunc = getNVMeDrives
-
 type Metrics struct {
 	executor        CommandExecutor
 	smartLogMetrics *prometheus.GaugeVec
-	registry        *prometheus.Registry
+}
+
+var getNVMeDrives = func() ([]string, error) {
+	cmd := exec.Command("lsblk", "-d", "-n", "-o", "NAME,TYPE")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, err
+	}
+
+	var drives []string
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "nvme") {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				drives = append(drives, parts[0])
+			}
+		}
+	}
+	return drives, nil
 }
 
 func NewMetrics(executor CommandExecutor, registry *prometheus.Registry) *Metrics {
@@ -46,7 +60,6 @@ func NewMetrics(executor CommandExecutor, registry *prometheus.Registry) *Metric
 	return &Metrics{
 		executor:        executor,
 		smartLogMetrics: smartLogMetrics,
-		registry:        registry,
 	}
 }
 
@@ -82,7 +95,7 @@ func parseNvmeSmartLogText(output string) (map[string]interface{}, error) {
 
 func (m *Metrics) UpdateMetrics() {
 	for {
-		drives, err := detectNVMeDrives()
+		drives, err := getNVMeDrives()
 		if err != nil {
 			log.Printf("Error detecting NVMe drives: %v", err)
 			return
@@ -104,24 +117,4 @@ func (m *Metrics) UpdateMetrics() {
 		}
 		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}
-}
-
-func getNVMeDrives() ([]string, error) {
-	cmd := exec.Command("lsblk", "-d", "-n", "-o", "NAME,TYPE")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, err
-	}
-
-	var drives []string
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "nvme") {
-			parts := strings.Fields(line)
-			if len(parts) > 0 {
-				drives = append(drives, parts[0])
-			}
-		}
-	}
-	return drives, nil
 }
