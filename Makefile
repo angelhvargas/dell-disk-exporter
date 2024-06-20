@@ -25,7 +25,7 @@ all: build
 
 build:
 	mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-$(ARCH) -v
+	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-$(ARCH) -v
 
 test:
 	$(GOTEST) -v ./...

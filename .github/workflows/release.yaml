@@ -101,8 +101,8 @@ jobs:
           tag: ${{ github.ref_name }}
         run: |
           gh release create "$tag" \
-              ./release/dell-disk-exporter-amd64#dell-disk-exporter-amd64 \
-              ./release/dell-disk-exporter-arm64#dell-disk-exporter-arm64 \
+              ./release/dell-disk-exporter-amd64#dell-disk-exporter-linux-amd64 \
+              ./release/dell-disk-exporter-arm64#dell-disk-exporter-linux-arm64 \
               --repo="$GITHUB_REPOSITORY" \
               --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
               --generate-notes

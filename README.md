@@ -55,18 +55,39 @@ scrape_configs:
 
 The exporter provides the following metrics:
 
-- RAID Metrics:
+### RAID Metrics
 
-  - `raid_status_<vdisk>`: Status of the RAID virtual disk.
-  - `raid_redundancy_<vdisk>`: Remaining redundancy of the RAID virtual disk.
-  - `raid_size_<vdisk>`: Size of the RAID virtual disk.
-  - `raid_layout_<vdisk>`: Layout of the RAID virtual disk.
+- raid_status{vdisk}: Status of the RAID virtual disk.
+- raid_redundancy{vdisk}: Remaining redundancy of the RAID virtual disk.
+- raid_size{vdisk}: Size of the RAID virtual disk.
+- raid_layout{vdisk}: Layout of the RAID virtual disk.
 
-- NVMe Metrics:
+### NVMe Metrics
 
-  - `nvme_presence_<drive>`: Presence of the NVMe device.
-  - `nvme_health_<drive>`: Health of the NVMe device.
-  - `nvme_<drive>_<metric>`: Various NVMe SMART metrics, including temperature, usage, power cycles, etc.
+- nvme_presence{device}: Presence of the NVMe device.
+- nvme_smart_log{device,metric}: Various NVMe SMART metrics, including:
+  - avail_spare
+  - controller_busy_time
+  - critical_comp_time
+  - critical_warning
+  - data_units_read
+  - data_units_written
+  - endurance_grp_critical_warning_summary
+  - host_read_commands
+  - host_write_commands
+  - media_errors
+  - num_err_log_entries
+  - percent_used
+  - power_cycles
+  - power_on_hours
+  - spare_thresh
+  - temperature
+  - thm_temp1_total_time
+  - thm_temp1_trans_count
+  - thm_temp2_total_time
+  - thm_temp2_trans_count
+  - unsafe_shutdowns
+  - warning_temp_time
 
 ## Development
 
@@ -79,11 +100,14 @@ The exporter provides the following metrics:
 ├── go.mod
 ├── go.sum
 ├── main.go
+├── main_test.go
 └── pkg
     ├── idrac
     │   ├── idrac.go
+    │   └── idrac_test.go
     └── smart
-        └── smart.go
+        ├── smart.go
+        └── smart_test.go
 ```
 
 - `main.go`: Entry point of the application.
@@ -112,3 +136,38 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 
 dell-disk-exporter is licensed under the [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE). See the LICENSE file for more information.
 
+## Setting Alerts in Prometheus
+
+To set alerts based on the metrics provided by this exporter, you can add rules to your Prometheus configuration. For example, to alert when an NVMe device is absent:
+
+```yaml
+groups:
+- name: NVMe Alerts
+  rules:
+  - alert: NVMeDeviceAbsent
+    expr: nvme_presence == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "NVMe Device Absent (instance {{ $labels.instance }})"
+      description: "NVMe device {{ $labels.device }} is absent for more than 5 minutes."
+
+```
+
+For RAID metrics, you can add rules such as:
+
+```yaml
+groups:
+- name: RAID Alerts
+  rules:
+  - alert: RAIDStatusNotOk
+    expr: raid_status != 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RAID Status Not OK (instance {{ $labels.instance }})"
+      description: "RAID virtual disk {{ $labels.vdisk }} has a status other than OK."
+
+```
