@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/angelhvargas/dell-disk-exporter/pkg/idrac"
 	"github.com/angelhvargas/dell-disk-exporter/pkg/smart"
@@ -33,7 +34,7 @@ func main() {
 	go idracClient.UpdateMetrics()
 
 	// Initialize the SMART metrics updater with the default executor and registry
-	smartMetrics := smart.NewMetrics(&smart.DefaultCommandExecutor{}, registry)
+	smartMetrics := smart.NewMetrics(&smart.DefaultCommandExecutor{}, registry, 5*time.Minute)
 	go smartMetrics.UpdateMetrics()
 
 	select {} // Block forever

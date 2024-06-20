@@ -26,6 +26,9 @@ func (e *DefaultCommandExecutor) ExecuteCommand(name string, args ...string) ([]
 type Metrics struct {
 	executor        CommandExecutor
 	smartLogMetrics *prometheus.GaugeVec
+	nvmePresence    *prometheus.GaugeVec
+	absentDrives    map[string]time.Time
+	absentDuration  time.Duration
 }
 
 var getNVMeDrives = func() ([]string, error) {
@@ -48,7 +51,7 @@ var getNVMeDrives = func() ([]string, error) {
 	return drives, nil
 }
 
-func NewMetrics(executor CommandExecutor, registry *prometheus.Registry) *Metrics {
+func NewMetrics(executor CommandExecutor, registry *prometheus.Registry, absentDuration time.Duration) *Metrics {
 	smartLogMetrics := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "nvme_smart_log",
@@ -56,10 +59,21 @@ func NewMetrics(executor CommandExecutor, registry *prometheus.Registry) *Metric
 		},
 		[]string{"device", "metric"},
 	)
+	nvmePresence := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "nvme_presence",
+			Help: "Presence of NVMe devices",
+		},
+		[]string{"device"},
+	)
 	registry.MustRegister(smartLogMetrics)
+	registry.MustRegister(nvmePresence)
 	return &Metrics{
 		executor:        executor,
 		smartLogMetrics: smartLogMetrics,
+		nvmePresence:    nvmePresence,
+		absentDrives:    make(map[string]time.Time),
+		absentDuration:  absentDuration,
 	}
 }
 
@@ -100,7 +114,10 @@ func (m *Metrics) UpdateMetrics() {
 			log.Printf("Error detecting NVMe drives: %v", err)
 			return
 		}
+
+		currentDrives := make(map[string]bool)
 		for _, drive := range drives {
+			currentDrives[drive] = true
 			logData, err := m.GetSMARTLog(drive)
 			if err != nil {
 				log.Printf("Error getting SMART log for %s: %v", drive, err)
@@ -114,7 +131,25 @@ func (m *Metrics) UpdateMetrics() {
 				}
 				m.smartLogMetrics.WithLabelValues(drive, key).Set(floatValue)
 			}
+			m.nvmePresence.WithLabelValues(drive).Set(1)
+			delete(m.absentDrives, drive)
 		}
+
+		for drive := range m.absentDrives {
+			if !currentDrives[drive] && time.Since(m.absentDrives[drive]) < m.absentDuration {
+				m.nvmePresence.WithLabelValues(drive).Set(0)
+			} else {
+				m.smartLogMetrics.DeleteLabelValues(drive)
+				m.nvmePresence.DeleteLabelValues(drive)
+			}
+		}
+
+		for drive := range currentDrives {
+			if _, found := m.absentDrives[drive]; !found {
+				m.absentDrives[drive] = time.Now()
+			}
+		}
+
 		time.Sleep(30 * time.Second) // Adjust the interval as needed
 	}
 }

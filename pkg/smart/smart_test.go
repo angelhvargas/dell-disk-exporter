@@ -65,7 +65,7 @@ func TestGetSMARTLog(t *testing.T) {
 	}
 
 	registry := prometheus.NewRegistry()
-	metrics := NewMetrics(mockExecutor, registry)
+	metrics := NewMetrics(mockExecutor, registry, 5*time.Minute)
 	log, err := metrics.GetSMARTLog("nvme0n1")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -84,7 +84,7 @@ func TestGetSMARTLogError(t *testing.T) {
 	}
 
 	registry := prometheus.NewRegistry()
-	metrics := NewMetrics(mockExecutor, registry)
+	metrics := NewMetrics(mockExecutor, registry, 5*time.Minute)
 	_, err := metrics.GetSMARTLog("nvme0n1")
 	if err == nil {
 		t.Fatalf("Expected error, got none")
@@ -128,7 +128,7 @@ func TestUpdateMetrics(t *testing.T) {
 	defer func() { getNVMeDrives = originalGetNVMeDrives }()
 
 	registry := prometheus.NewRegistry()
-	metrics := NewMetrics(mockExecutor, registry)
+	metrics := NewMetrics(mockExecutor, registry, 5*time.Minute)
 
 	go metrics.UpdateMetrics()
 
@@ -177,58 +177,18 @@ nvme_smart_log{device="nvme0n1",metric="warning_temp_time"} 0
 	// Allow some time for metrics to be updated
 	time.Sleep(1 * time.Second)
 
-	// Test that the metrics for the absent drive are still present
-	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), "nvme_smart_log"); err != nil {
+	// Test NVMe presence metric
+	expectedPresenceMetrics := `
+# HELP nvme_presence Presence of NVMe devices
+# TYPE nvme_presence gauge
+nvme_presence{device="nvme0n1"} 0
+`
+	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedPresenceMetrics), "nvme_presence"); err != nil {
 		t.Fatalf("unexpected collecting result:\n%s", err)
 	}
-}
 
-func TestUpdateMetricsWithDriveAbsence(t *testing.T) {
-	mockExecutor := &MockCommandExecutor{
-		MockOutput: `{
-  "critical_warning" : 0,
-  "temperature" : 301,
-  "avail_spare" : 100,
-  "spare_thresh" : 5,
-  "percent_used" : 15,
-  "data_units_read" : 499296134,
-  "data_units_written" : 1474968593,
-  "host_read_commands" : 9347931143,
-  "host_write_commands" : 51493840602,
-  "controller_busy_time" : 1974546,
-  "power_cycles" : 290,
-  "power_on_hours" : 38313,
-  "unsafe_shutdowns" : 139,
-  "media_errors" : 0,
-  "num_err_log_entries" : 17,
-  "warning_temp_time" : 0,
-  "critical_comp_time" : 0,
-  "temperature_sensor_1" : 306,
-  "temperature_sensor_2" : 301,
-  "temperature_sensor_3" : 296,
-  "temperature_sensor_4" : 295,
-  "thm_temp1_trans_count" : 0,
-  "thm_temp2_trans_count" : 0,
-  "thm_temp1_total_time" : 0,
-  "thm_temp2_total_time" : 0
-}`,
-	}
-
-	// Mock getNVMeDrives function by setting it to the mock function
-	originalGetNVMeDrives := getNVMeDrives
-	getNVMeDrives = mockGetNVMeDrives
-	defer func() { getNVMeDrives = originalGetNVMeDrives }()
-
-	registry := prometheus.NewRegistry()
-	metrics := NewMetrics(mockExecutor, registry)
-
-	go metrics.UpdateMetrics()
-
-	// Allow some time for metrics to be updated
-	time.Sleep(1 * time.Second)
-
-	// Test SMART log metrics
-	expectedMetrics := `
+	// Test that the metrics for the absent drive are still present for SMART log metrics
+	expectedMetricsWithAbsence := `
 # HELP nvme_smart_log SMART log metrics for NVMe devices
 # TYPE nvme_smart_log gauge
 nvme_smart_log{device="nvme0n1",metric="avail_spare"} 100
@@ -257,20 +217,7 @@ nvme_smart_log{device="nvme0n1",metric="thm_temp2_trans_count"} 0
 nvme_smart_log{device="nvme0n1",metric="unsafe_shutdowns"} 139
 nvme_smart_log{device="nvme0n1",metric="warning_temp_time"} 0
 `
-	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), "nvme_smart_log"); err != nil {
-		t.Fatalf("unexpected collecting result:\n%s", err)
-	}
-
-	// Simulate the drive becoming absent
-	getNVMeDrives = mockGetNVMeDrivesAbsent
-
-	go metrics.UpdateMetrics()
-
-	// Allow some time for metrics to be updated
-	time.Sleep(1 * time.Second)
-
-	// Test that the metrics for the absent drive are still present
-	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), "nvme_smart_log"); err != nil {
+	if err := testutil.GatherAndCompare(registry, strings.NewReader(expectedMetricsWithAbsence), "nvme_smart_log"); err != nil {
 		t.Fatalf("unexpected collecting result:\n%s", err)
 	}
 }
